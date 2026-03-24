@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import {
   AlertTriangle, Building2, CheckCircle2, Clock3,
   FolderKanban, Home, Package, Plus, Search,
-  Wallet, X, Menu, Filter, Edit, Trash2, ThumbsUp, ThumbsDown, DollarSign, Lock, RefreshCcw, ShieldAlert, FileCheck
+  Wallet, X, Menu, Filter, Edit, Trash2, ThumbsUp, ThumbsDown, DollarSign, Lock, RefreshCcw, ShieldAlert, FileCheck, Calculator
 } from "lucide-react";
 
 // --- FIREBASE IMPORTS E INICIALIZAÇÃO ---
@@ -158,6 +158,7 @@ export default function ConstrutoraPainel() {
   const [demandas, setDemandas] = useState([]);
   const [compras, setCompras] = useState([]);
   const [pagamentos, setPagamentos] = useState([]);
+  const [medicoes, setMedicoes] = useState([]);
 
   // Estados de Modais
   const [modalAtivo, setModalAtivo] = useState(null);
@@ -211,7 +212,10 @@ export default function ConstrutoraPainel() {
     const unsubPagamentos = onSnapshot(getColRef('pagamentos'), 
       (snap) => setPagamentos(snap.docs.map(doc => ({ ...doc.data(), id: doc.id }))), errorLogger('pagamentos'));
 
-    return () => { unsubObras(); unsubDemandas(); unsubCompras(); unsubPagamentos(); };
+    const unsubMedicoes = onSnapshot(getColRef('medicoes'), 
+      (snap) => setMedicoes(snap.docs.map(doc => ({ ...doc.data(), id: doc.id }))), errorLogger('medicoes'));
+
+    return () => { unsubObras(); unsubDemandas(); unsubCompras(); unsubPagamentos(); unsubMedicoes(); };
   }, [user]);
 
   // --- FILTROS E AGRUPAMENTOS ---
@@ -223,8 +227,9 @@ export default function ConstrutoraPainel() {
       ...demandas.filter(d => d.exclusaoPendente).map(d => ({...d, tipoLogico: 'demanda', tituloExibicao: d.titulo, icone: FolderKanban})),
       ...compras.filter(c => c.exclusaoPendente).map(c => ({...c, tipoLogico: 'compra', tituloExibicao: c.item, icone: Package})),
       ...pagamentos.filter(p => p.exclusaoPendente).map(p => ({...p, tipoLogico: 'pagamento', tituloExibicao: p.favorecido, icone: DollarSign})),
+      ...medicoes.filter(m => m.exclusaoPendente).map(m => ({...m, tipoLogico: 'medicao', tituloExibicao: `Medição - ${m.obra} (${formatDate(m.dataMedicao)})`, icone: Calculator})),
     ];
-  }, [obras, demandas, compras, pagamentos]);
+  }, [obras, demandas, compras, pagamentos, medicoes]);
 
   const aplicarFiltros = (lista, camposBusca) => {
     return lista.filter(item => {
@@ -239,6 +244,7 @@ export default function ConstrutoraPainel() {
   const demandasFiltradas = useMemo(() => aplicarFiltros(demandas, ["titulo", "responsavel", "setor", "status", "prioridade"]), [demandas, buscaGeral, filtroObraGlobal]);
   const comprasFiltradas = useMemo(() => aplicarFiltros(compras, ["item", "responsavel", "status", "urgencia"]), [compras, buscaGeral, filtroObraGlobal]);
   const pagamentosFiltrados = useMemo(() => aplicarFiltros(pagamentos, ["favorecido", "categoria", "status"]), [pagamentos, buscaGeral, filtroObraGlobal]);
+  const medicoesFiltradas = useMemo(() => aplicarFiltros(medicoes, ["obra", "bancoPago", "statusFiscal", "nfEmitida"]), [medicoes, buscaGeral, filtroObraGlobal]);
 
   const aprovaçõesPendentes = useMemo(() => {
     const comprasAprov = comprasFiltradas.filter(c => c.status === "Aguardando aprovação").map(c => ({...c, tipoAprovacao: 'compra'}));
@@ -253,6 +259,7 @@ export default function ConstrutoraPainel() {
     { key: "demandas", label: "Demandas", icon: FolderKanban },
     { key: "compras", label: "Compras", icon: Package },
     { key: "pagamentos", label: "Financeiro", icon: Wallet },
+    { key: "medicoes", label: "Medições", icon: Calculator },
     { key: "exclusoes", label: "Lixeira / Exclusões", icon: ShieldAlert, badge: exclusoesPendentes.length },
   ];
 
@@ -262,6 +269,7 @@ export default function ConstrutoraPainel() {
     if (tipo === 'demanda') return 'demandas';
     if (tipo === 'compra') return 'compras';
     if (tipo === 'pagamento') return 'pagamentos';
+    if (tipo === 'medicao') return 'medicoes';
     return '';
   };
 
@@ -403,16 +411,18 @@ export default function ConstrutoraPainel() {
   };
 
   const FormCompra = () => {
-    const [form, setForm] = useState(itemEditando || { item: "", obra: "", quantidade: "", unidade: "un", urgencia: "Média", status: "Aguardando aprovação", responsavel: "" });
+    const [form, setForm] = useState(itemEditando || { item: "", obra: "", quantidade: "", unidade: "un", urgencia: "Média", status: "Aguardando aprovação", responsavel: "", valorEstimado: "" });
     return (
       <div className="grid md:grid-cols-2 gap-5">
         <div className="md:col-span-2"><Input label="Material / Insumo" value={form.item} onChange={e => setForm({...form, item: e.target.value})} /></div>
         <Select label="Obra" options={nomesObras} value={form.obra} onChange={v => setForm({...form, obra: v})} />
         <Input label="Quantidade" type="number" value={form.quantidade} onChange={e => setForm({...form, quantidade: e.target.value})} />
         <Input label="Unidade Medida (un, sc, m³)" value={form.unidade} onChange={e => setForm({...form, unidade: e.target.value})} />
+        <Input label="Valor Estimado (R$ - Opcional)" type="number" value={form.valorEstimado} onChange={e => setForm({...form, valorEstimado: e.target.value})} />
         <Select label="Urgência" options={PRIORIDADES} value={form.urgencia} onChange={v => setForm({...form, urgencia: v})} />
         <Select label="Status (Automático)" options={STATUS_COMPRA} value={form.status} onChange={v => setForm({...form, status: v})} disabled={!itemEditando} />
         <Input label="Comprador Responsável" value={form.responsavel} onChange={e => setForm({...form, responsavel: e.target.value})} />
+        
         <div className="md:col-span-2 flex justify-end gap-3 mt-4">
           <Button variant="ghost" onClick={fecharModal}>Cancelar</Button>
           <Button onClick={() => salvarItem('compra', form)}>Salvar Compra</Button>
@@ -434,6 +444,34 @@ export default function ConstrutoraPainel() {
         <div className="md:col-span-2 flex justify-end gap-3 mt-4">
           <Button variant="ghost" onClick={fecharModal}>Cancelar</Button>
           <Button onClick={() => salvarItem('pagamento', form)}>Salvar Pagamento</Button>
+        </div>
+      </div>
+    );
+  };
+
+  const FormMedicao = () => {
+    const [form, setForm] = useState(itemEditando || { obra: "", dataMedicao: "", valorPrevisto: "", statusFiscal: "Pendente", valorAprovado: "", nfEmitida: "Não", valorPago: "", dataRecebimento: "", bancoPago: "" });
+    return (
+      <div className="grid md:grid-cols-2 gap-5">
+        <Select label="Obra" options={nomesObras} value={form.obra} onChange={v => setForm({...form, obra: v})} />
+        <Input type="date" label="Data da Medição" value={form.dataMedicao} onChange={e => setForm({...form, dataMedicao: e.target.value})} />
+        
+        <Input label="Valor Previsto (R$)" type="number" value={form.valorPrevisto} onChange={e => setForm({...form, valorPrevisto: e.target.value})} />
+        <Select label="Aprovado pelo Fiscal?" options={["Pendente", "Aprovado", "Reprovado"]} value={form.statusFiscal} onChange={v => setForm({...form, statusFiscal: v})} />
+        
+        <Input label="Valor Aprovado (R$)" type="number" value={form.valorAprovado} onChange={e => setForm({...form, valorAprovado: e.target.value})} />
+        <Select label="NF Emitida?" options={["Sim", "Não"]} value={form.nfEmitida} onChange={v => setForm({...form, nfEmitida: v})} />
+        
+        <Input label="Valor Pago (R$)" type="number" value={form.valorPago} onChange={e => setForm({...form, valorPago: e.target.value})} />
+        <Input type="date" label="Data de Recebimento" value={form.dataRecebimento} onChange={e => setForm({...form, dataRecebimento: e.target.value})} />
+        
+        <div className="md:col-span-2">
+          <Input label="Banco Pagador" value={form.bancoPago} onChange={e => setForm({...form, bancoPago: e.target.value})} placeholder="Ex: Bradesco, Itaú..." />
+        </div>
+
+        <div className="md:col-span-2 flex justify-end gap-3 mt-4">
+          <Button variant="ghost" onClick={fecharModal}>Cancelar</Button>
+          <Button onClick={() => salvarItem('medicao', form)}>Salvar Medição</Button>
         </div>
       </div>
     );
@@ -497,7 +535,14 @@ export default function ConstrutoraPainel() {
                         </div>
                       </td>
                       <td className="p-4 text-right font-semibold text-slate-900">
-                        {item.valor ? formatBRL(item.valor) : `${item.quantidade} ${item.unidade || ''}`}
+                        {item.tipoAprovacao === 'pagamento' && (item.valor ? formatBRL(item.valor) : '-')}
+                        {item.tipoAprovacao === 'compra' && (
+                          <div className="flex flex-col items-end">
+                            <span>{item.quantidade} {item.unidade || ''}</span>
+                            {item.valorEstimado && <span className="text-xs text-slate-500 font-normal mt-0.5">Est: {formatBRL(item.valorEstimado)}</span>}
+                          </div>
+                        )}
+                        {item.tipoAprovacao === 'demanda' && '-'}
                       </td>
                       <td className="p-4 text-right">
                         <Button variant="primary" icon={FileCheck} onClick={() => abrirModalAvaliacao(item, item.tipoAprovacao)} className="py-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 shadow-md">Analisar</Button>
@@ -628,7 +673,14 @@ export default function ConstrutoraPainel() {
                      )}
                   </td>
                   <td className="p-4 text-sm text-slate-600">{item.obra}</td>
-                  <td className="p-4 text-sm font-semibold">{isCompra ? `${item.quantidade} ${item.unidade}` : formatBRL(item.valor)}</td>
+                  <td className="p-4 text-sm font-semibold">
+                    {isCompra ? (
+                      <div>
+                        {item.quantidade} {item.unidade}
+                        {item.valorEstimado && <div className="text-xs text-slate-500 font-normal mt-0.5">Est: {formatBRL(item.valorEstimado)}</div>}
+                      </div>
+                    ) : formatBRL(item.valor)}
+                  </td>
                   <td className="p-4"><Badge value={item.status} /></td>
                   <td className="p-4 flex justify-end gap-2">
                     {item.status === "Aguardando aprovação" && (
@@ -648,6 +700,62 @@ export default function ConstrutoraPainel() {
       </div>
     );
   };
+
+  const renderMedicoes = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div><h1 className="text-2xl font-bold text-slate-900">Medições</h1><p className="text-slate-500 mt-1">Acompanhamento de medições e faturamentos.</p></div>
+        <Button icon={Plus} onClick={() => abrirModal('medicao')}>Nova Medição</Button>
+      </div>
+
+      <Card className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-200">
+              <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Obra & Data</th>
+              <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Valores (Previsto / Aprov)</th>
+              <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Status Fiscal & NF</th>
+              <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Recebimento</th>
+              <th className="p-4 text-xs font-semibold text-slate-500 uppercase text-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {medicoesFiltradas.map(item => (
+              <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                <td className="p-4">
+                   <p className="text-sm font-bold text-slate-900">{item.obra || "-"}</p>
+                   <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Clock3 className="w-3 h-3"/> {formatDate(item.dataMedicao)}</p>
+                </td>
+                <td className="p-4">
+                   <p className="text-sm text-slate-600">Previsto: <span className="font-medium text-slate-900">{formatBRL(item.valorPrevisto)}</span></p>
+                   <p className="text-sm text-slate-600 mt-1">Aprovado: <span className="font-medium text-emerald-600">{formatBRL(item.valorAprovado)}</span></p>
+                </td>
+                <td className="p-4">
+                   <div className="flex flex-col gap-2 items-start">
+                     <Badge value={item.statusFiscal === "Aprovado" ? "Concluído" : item.statusFiscal === "Reprovado" ? "Reprovado" : "Pendente"} />
+                     <span className={`text-xs font-semibold px-2 py-1 rounded-md ${item.nfEmitida === 'Sim' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>NF: {item.nfEmitida}</span>
+                   </div>
+                </td>
+                <td className="p-4">
+                   <p className="text-sm font-bold text-slate-900">{formatBRL(item.valorPago)}</p>
+                   <p className="text-xs text-slate-500 mt-1">{item.bancoPago || "Banco não inf."} • {formatDate(item.dataRecebimento)}</p>
+                </td>
+                <td className="p-4 flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => abrirModal('medicao', item)} className="p-2"><Edit className="w-4 h-4"/></Button>
+                  <Button variant="danger" onClick={() => solicitarExclusao(item.id, 'medicao')} className="p-2"><Trash2 className="w-4 h-4"/></Button>
+                </td>
+              </tr>
+            ))}
+            {medicoesFiltradas.length === 0 && (
+              <tr>
+                <td colSpan="5" className="p-8 text-center text-slate-500">Nenhuma medição encontrada.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
 
   const renderLixeira = () => (
     <div className="space-y-6">
@@ -706,16 +814,11 @@ export default function ConstrutoraPainel() {
       case "demandas": return renderDemandas();
       case "compras": return renderComprasEPagamentos("compras");
       case "pagamentos": return renderComprasEPagamentos("pagamentos");
+      case "medicoes": return renderMedicoes();
       case "exclusoes": return renderLixeira();
       default: return renderDashboard();
     }
   };
-
-  // --- TRATAMENTO DO ERRO DO FIREBASE ---
-  if (user === null && isPreview === false) {
-     // Apenas mostra erro de loading se estiver no netlify e ainda n tiver logado
-     // O erro nativo seria logado no console
-  }
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-900">
@@ -784,7 +887,16 @@ export default function ConstrutoraPainel() {
                  <p className="text-sm text-slate-500">{modalAvaliacao.item?.obra} • {(modalAvaliacao.tipo || "").toUpperCase()}</p>
              </div>
              <div className="sm:text-right">
-                  <p className="font-bold text-indigo-700 text-xl">{modalAvaliacao.item?.valor ? formatBRL(modalAvaliacao.item?.valor) : `${modalAvaliacao.item?.quantidade || ''} ${modalAvaliacao.item?.unidade || ''}`}</p>
+                  <p className="font-bold text-indigo-700 text-xl">
+                    {modalAvaliacao.tipo === 'pagamento' && formatBRL(modalAvaliacao.item?.valor)}
+                    {modalAvaliacao.tipo === 'compra' && (
+                       <span className="flex flex-col items-end">
+                           <span>{modalAvaliacao.item?.quantidade} {modalAvaliacao.item?.unidade}</span>
+                           {modalAvaliacao.item?.valorEstimado && <span className="text-sm text-slate-500 font-medium mt-1">Estimado: {formatBRL(modalAvaliacao.item.valorEstimado)}</span>}
+                       </span>
+                    )}
+                    {modalAvaliacao.tipo === 'demanda' && '-'}
+                  </p>
              </div>
           </div>
 
@@ -883,6 +995,7 @@ export default function ConstrutoraPainel() {
       <Modal isOpen={modalAtivo === 'demanda'} onClose={fecharModal} title={itemEditando ? "Editar Demanda" : "Nova Demanda"}><FormDemanda /></Modal>
       <Modal isOpen={modalAtivo === 'compra'} onClose={fecharModal} title={itemEditando ? "Editar Compra" : "Nova Compra"}><FormCompra /></Modal>
       <Modal isOpen={modalAtivo === 'pagamento'} onClose={fecharModal} title={itemEditando ? "Editar Pagamento" : "Novo Pagamento"}><FormPagamento /></Modal>
+      <Modal isOpen={modalAtivo === 'medicao'} onClose={fecharModal} title={itemEditando ? "Editar Medição" : "Nova Medição"}><FormMedicao /></Modal>
     </div>
   );
 }
